@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>CubeRush 3×3 · Speed Cube</title>
+  <meta name="description" content="Solve a 3×3 puzzle cube in your browser: drag with mouse or touch, or race with speedcuber keyboard controls." />
+  <meta name="theme-color" content="#0a0d12" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="scene" aria-label="3D puzzle cube. Drag stickers to turn layers."></canvas>
+  <div id="loading" class="loading">Loading 3D cube…</div>
+
+  <header class="topbar">
+    <div class="brand">
+      <img src="favicon.svg" alt="" width="34" height="34" />
+      <div>
+        <h1>CubeRush</h1>
+        <small>3×3 speed cube</small>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="icon-btn" id="btnStats" title="Stats" aria-label="Show or hide stats">
+        <svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V5M19 20v-6M3 20h18" /></svg>
+      </button>
+      <button class="icon-btn" id="btnKeys" title="Keyboard controls (?)" aria-label="Keyboard controls">
+        <svg viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5" /><path d="M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M7.5 14h9" /></svg>
+      </button>
+      <button class="icon-btn" id="btnSettings" title="Settings" aria-label="Settings" aria-expanded="false">
+        <svg viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1" /><circle cx="15" cy="6" r="2" /><circle cx="9" cy="12" r="2" /><circle cx="17" cy="18" r="2" /></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="timer-wrap">
+    <div id="timer" class="timer idle">0.00</div>
+    <div id="status" class="status"></div>
+    <div id="meta" class="meta">Moves 0</div>
+  </div>
+
+  <aside id="stats" class="panel side" aria-label="Solve statistics">
+    <h2>Stats</h2>
+    <dl class="stat-grid">
+      <div><dt>Best</dt><dd id="stBest">–</dd></div>
+      <div><dt>Ao5</dt><dd id="stAo5">–</dd></div>
+      <div><dt>Ao12</dt><dd id="stAo12">–</dd></div>
+      <div><dt>Solves</dt><dd id="stCount">0</dd></div>
+    </dl>
+    <h3>Recent</h3>
+    <ol id="recent" class="recent"></ol>
+    <button id="btnClear" class="link-btn" type="button">Clear history</button>
+  </aside>
+
+  <div id="settings" class="panel popover" role="dialog" aria-label="Settings">
+    <h2>Settings</h2>
+    <label class="row">
+      <span>Turn animation <span class="val" id="setSpeedVal"></span></span>
+      <input type="range" id="setSpeed" min="0" max="300" step="10" />
+    </label>
+    <label class="row">
+      <span>Keyboard layout</span>
+      <select id="setLayout">
+        <option value="speed">Speedcuber (I K J F … two-handed)</option>
+        <option value="notation">Notation (R = R, Shift+R = R′)</option>
+      </select>
+    </label>
+    <label class="row check"><input type="checkbox" id="setInspect" /> 15-second inspection</label>
+    <label class="row check"><input type="checkbox" id="setSound" /> Turn sounds</label>
+  </div>
+
+  <footer class="bottombar">
+    <div id="moveLog" class="movelog"></div>
+    <div id="scramble" class="panel scramble"></div>
+    <div class="controls">
+      <button class="btn primary" id="btnScramble" type="button">Scramble <kbd>Space</kbd></button>
+      <button class="btn" id="btnUndo" type="button">Undo <kbd>⌫</kbd></button>
+      <button class="btn" id="btnReset" type="button">Reset <kbd>Esc</kbd></button>
+    </div>
+  </footer>
+
+  <!-- Welcome -->
+  <div class="backdrop open" id="welcome">
+    <div class="modal">
+      <h2>CubeRush 3×3</h2>
+      <p class="lead">Scramble the cube, then solve it as fast as you can.</p>
+      <ul class="howto">
+        <li><b>Mouse / touch:</b> drag a sticker to turn its layer. Drag empty space to turn the whole cube.</li>
+        <li><b>Keyboard:</b> two-handed speedcuber keys (<kbd>I</kbd> <kbd>K</kbd> <kbd>J</kbd> <kbd>F</kbd> …) for very fast solving. <button class="link-btn inline" type="button" data-open="keys">See the key map</button></li>
+        <li><b>Timer:</b> starts on your first turn and stops the moment the cube is solved.</li>
+      </ul>
+      <div class="modal-actions">
+        <button class="btn primary" id="btnStart" type="button">Scramble &amp; start <kbd>Space</kbd></button>
+        <button class="btn" type="button" data-close>Free play</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Key map -->
+  <div class="backdrop" id="keys">
+    <div class="modal wide">
+      <h2>Keyboard controls</h2>
+      <div id="keymapBody"></div>
+      <div class="modal-actions">
+        <button class="btn" type="button" data-close>Close <kbd>Esc</kbd></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Result -->
+  <div class="backdrop" id="result">
+    <div class="modal result">
+      <div class="badge" id="pbBadge" hidden>New personal best!</div>
+      <h2>Solved!</h2>
+      <div class="big-time" id="resTime">0.00</div>
+      <div class="res-meta" id="resMeta"></div>
+      <div class="modal-actions">
+        <button class="btn primary" id="btnNext" type="button">Next scramble <kbd>Space</kbd></button>
+        <button class="btn" type="button" data-close>Close</button>
+      </div>
+    </div>
+  </div>
+
+  <noscript><div class="loading">Please enable JavaScript to play.</div></noscript>
+  <script>
+    setTimeout(function () {
+      var l = document.getElementById('loading');
+      if (l && !l.classList.contains('gone')) {
+        l.textContent = 'Could not load the 3D engine. Check your internet connection and reload the page.';
+      }
+    }, 12000);
+  </script>
+  <script type="module" src="main.js"></script>
+</body>
+</html>
