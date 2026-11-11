@@ -111,7 +111,6 @@ const pivot = new THREE.Object3D();
 cubeGroup.add(pivot);
 
 const cubies = [];
-const pickables = [];
 const bodyGeo = new RoundedBoxGeometry(0.97, 0.97, 0.97, 4, 0.08);
 const bodyMat = new THREE.MeshStandardMaterial({ color: 0x14161b, roughness: 0.5, metalness: 0.05 });
 const stickerGeo = roundedSquare(0.8, 0.13);
@@ -130,7 +129,6 @@ for (let x = -1; x <= 1; x++) {
       cubie.userData.stickers = [];
       const body = new THREE.Mesh(bodyGeo, bodyMat);
       cubie.add(body);
-      pickables.push(body);
       for (const [face, [dx, dy, dz]] of Object.entries(FACE_DIRS)) {
         if ((dx && dx === x) || (dy && dy === y) || (dz && dz === z)) {
           const sticker = new THREE.Mesh(stickerGeo, stickerMats[face]);
@@ -139,7 +137,6 @@ for (let x = -1; x <= 1; x++) {
           sticker.userData = { face, normal: new THREE.Vector3(dx, dy, dz) };
           cubie.add(sticker);
           cubie.userData.stickers.push(sticker);
-          pickables.push(sticker);
         }
       }
       cubeGroup.add(cubie);
@@ -592,21 +589,28 @@ const raycaster = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
 const AXES = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
 
+// The cube's outer surface. Picking against this box instead of the meshes means a
+// press on the black gap between two stickers still grabs the nearest sticker,
+// rather than slipping through and rotating the whole cube.
+const CUBE_BOX = new THREE.Box3(new THREE.Vector3(-1.49, -1.49, -1.49), new THREE.Vector3(1.49, 1.49, 1.49));
+const _cell = new THREE.Vector3();
+
 function pick(clientX, clientY) {
   const r = canvas.getBoundingClientRect();
   ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
-  const hits = raycaster.intersectObjects(pickables, false);
-  if (!hits.length) return null;
-  const h = hits[0];
-  const cubie = h.object.parent;
-  const n = h.face.normal.clone().transformDirection(h.object.matrixWorld);
-  const axis = dominantAxis(n);
-  const sign = Math.sign(n[axis]);
-  if (Math.round(cubie.position[axis]) !== sign) return null; // not an outer face
+  const point = raycaster.ray.intersectBox(CUBE_BOX, new THREE.Vector3());
+  if (!point) return null;
+  const axis = dominantAxis(point);
+  const sign = Math.sign(point[axis]);
+  for (const a of ['x', 'y', 'z']) {
+    _cell[a] = a === axis ? sign : Math.max(-1, Math.min(1, Math.round(point[a])));
+  }
+  const cubie = cubies.find((c) => c.position.distanceToSquared(_cell) < 0.01);
+  if (!cubie) return null;
   const normal = new THREE.Vector3();
   normal[axis] = sign;
-  return { cubie, point: h.point.clone(), normal };
+  return { cubie, point, normal };
 }
 
 function toScreen(v) {
