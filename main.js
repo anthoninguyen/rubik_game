@@ -72,6 +72,7 @@ function resize() {
   camera.position.copy(VIEW_DIR).multiplyScalar(Math.max(distV, distH));
   camera.lookAt(0, 0, 0);
   camera.updateProjectionMatrix();
+  camera.updateMatrixWorld(); // so picking works even before the first frame renders
 }
 window.addEventListener('resize', resize);
 resize();
