@@ -30,9 +30,10 @@ const store = {
 
 const SETTINGS_KEY = 'cuberush.settings.v1';
 const SOLVES_KEY = 'cuberush.solves.v1';
-const settings = { speed: 120, layout: 'speed', inspection: false, sound: true, ...store.get(SETTINGS_KEY, {}) };
+const settings = { speed: 120, layout: 'speed', inspection: false, sound: true, guide: false, ...store.get(SETTINGS_KEY, {}) };
 if (!['speed', 'notation'].includes(settings.layout)) settings.layout = 'speed';
 settings.speed = Math.min(300, Math.max(0, Number(settings.speed) || 0));
+settings.guide = settings.guide === true;
 let solves = store.get(SOLVES_KEY, []);
 if (!Array.isArray(solves)) solves = [];
 const saveSettings = () => store.set(SETTINGS_KEY, settings);
@@ -65,6 +66,9 @@ function resize() {
   const h = window.innerHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
+  // Lift the cube a little while the Pro guide key strip takes space at the bottom.
+  if (document.body.classList.contains('guide-on')) camera.setViewOffset(w, h, 0, Math.round(h * 0.05), w, h);
+  else camera.clearViewOffset();
   const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
   const radius = 2.65; // screen-space radius of the cube to keep visible
   const distV = radius / (0.58 * tanHalf);
@@ -337,11 +341,16 @@ let finalMoves = 0;
 let scrambleText = '';
 let history = [];
 let log = [];
+let trail = []; // every move since the cube was last solved, in issue order (feeds the Pro guide)
+let guideSeen = false; // the Pro guide showed a solution for the current scramble
+let guideMoves = []; // the solution the Pro guide is currently showing
 
 function doMove(input, { record = true } = {}) {
   const mv = typeof input === 'string' ? parseMove(input) : { ...input };
   if (!mv) return;
   mv.issuedAt = performance.now();
+  if (settings.guide && !mv.rotation) checkGuidePress(mv);
+  trail.push(mv);
   if (!mv.rotation) {
     if (state === 'solved') {
       state = 'free';
@@ -365,7 +374,10 @@ function undo() {
 
 function onMoveFinished(mv) {
   if (mv.silent) return;
-  if (state === 'solving' && !mv.rotation && isSolved()) finishSolve(mv);
+  const solved = isSolved();
+  if (solved && !queue.length) trail = []; // back to a known solved state
+  if (state === 'solving' && !mv.rotation && solved) finishSolve(mv);
+  else if (solved && settings.guide) renderGuide();
 }
 
 function startSolve(at) {
@@ -378,13 +390,16 @@ function finishSolve(mv) {
   finalTime = Math.max(0, mv.issuedAt - solveStart);
   finalMoves = mv.seq;
   state = 'solved';
+  const guided = guideSeen;
   const prevBest = bestTime();
-  solves.push({ t: Math.round(finalTime), m: finalMoves, d: Date.now(), s: scrambleText });
+  const entry = { t: Math.round(finalTime), m: finalMoves, d: Date.now(), s: scrambleText };
+  if (guided) entry.g = 1; // guided solves are listed but kept out of Best / Ao5 / Ao12
+  solves.push(entry);
   if (solves.length > 500) solves = solves.slice(-500);
   store.set(SOLVES_KEY, solves);
   renderStats();
   refreshUI();
-  showResult(prevBest === null || finalTime < prevBest);
+  showResult(!guided && (prevBest === null || finalTime < prevBest), guided);
 }
 
 function resetCubeModel() {
@@ -423,6 +438,8 @@ function newScramble() {
     flush();
   } while (isSolved());
   scrambleText = seq.join(' ');
+  trail = seq.map(parseMove);
+  guideSeen = false;
   history = [];
   log = [];
   moveCount = 0;
@@ -440,6 +457,8 @@ function resetAll() {
   flush();
   closeOverlays();
   resetCubeModel();
+  trail = [];
+  guideSeen = false;
   history = [];
   log = [];
   moveCount = 0;
@@ -526,14 +545,18 @@ function refreshUI() {
   ui.moveLog.textContent = log.slice(-16).join(' ');
   $('btnUndo').disabled = history.length === 0;
   updateMeta(performance.now());
+  renderGuide();
 }
 
+const ownSolves = () => solves.filter((s) => !s.g);
 function bestTime() {
-  return solves.length ? Math.min(...solves.map((s) => s.t)) : null;
+  const own = ownSolves();
+  return own.length ? Math.min(...own.map((s) => s.t)) : null;
 }
 function averageOf(n) {
-  if (solves.length < n) return null;
-  const times = solves.slice(-n).map((s) => s.t).sort((a, b) => a - b);
+  const own = ownSolves();
+  if (own.length < n) return null;
+  const times = own.slice(-n).map((s) => s.t).sort((a, b) => a - b);
   times.shift();
   times.pop();
   return times.reduce((a, b) => a + b, 0) / times.length;
@@ -549,16 +572,22 @@ function renderStats() {
   const recent = solves.slice(-12).reverse();
   $('recent').innerHTML = recent.length
     ? recent
-        .map((s, i) => `<li><span class="n">${solves.length - i}.</span><span class="t">${fmt(s.t)}</span><span class="m">${s.m} moves</span></li>`)
+        .map(
+          (s, i) =>
+            `<li><span class="n">${solves.length - i}.</span><span class="t">${fmt(s.t)}${s.g ? ' <i class="tag">guide</i>' : ''}</span><span class="m">${s.m} moves</span></li>`,
+        )
         .join('')
     : '<li class="empty">No solves yet</li>';
 }
 
-function showResult(isPB) {
+function showResult(isPB, guided) {
   $('resTime').textContent = fmt(finalTime);
   const tps = finalTime > 0 ? (finalMoves / (finalTime / 1000)).toFixed(2) : '–';
   $('resMeta').textContent = `${finalMoves} moves · ${tps} turns per second`;
-  $('pbBadge').hidden = !isPB;
+  const badge = $('pbBadge');
+  badge.hidden = !isPB && !guided;
+  badge.textContent = guided ? 'Pro guide solve' : 'New personal best!';
+  badge.classList.toggle('guide', guided);
   closeOverlays();
   $('result').classList.add('open');
   confetti();
@@ -744,6 +773,11 @@ window.addEventListener('keydown', (e) => {
     if (!e.repeat) undo();
     return;
   }
+  if (e.code === 'Tab') {
+    e.preventDefault();
+    if (!e.repeat) toggleGuide();
+    return;
+  }
 
   let mv = ARROW_KEYS[e.code];
   if (!mv) {
@@ -802,6 +836,7 @@ function renderKeymap() {
     <tr><td><kbd>Space</kbd></td><td>New scramble (timer starts on your first turn)</td></tr>
     <tr><td><kbd>Esc</kbd></td><td>Reset to a solved cube / close a window</td></tr>
     <tr><td><kbd>Backspace</kbd> or <kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo the last move</td></tr>
+    <tr><td><kbd>Tab</kbd></td><td>Pro guide: show the keys that solve the cube, in order</td></tr>
     <tr><td><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></td><td>Rotate the whole cube (← y, → y′, ↑ x, ↓ x′)</td></tr>
     <tr><td><kbd>?</kbd></td><td>Show or hide this help</td></tr>
   </tbody></table>`;
@@ -846,6 +881,13 @@ $('btnStart').addEventListener('click', newScramble);
 $('btnNext').addEventListener('click', newScramble);
 $('btnUndo').addEventListener('click', undo);
 $('btnReset').addEventListener('click', resetAll);
+$('btnGuide').addEventListener('click', toggleGuide);
+$('guideTape').addEventListener('click', (e) => {
+  if (!e.target.closest('.cap.next') || !guideMoves.length) return;
+  $('welcome').classList.remove('open');
+  $('result').classList.remove('open');
+  doMove(guideMoves[0]);
+});
 $('btnKeys').addEventListener('click', toggleKeys);
 $('btnStats').addEventListener('click', () => {
   const panel = $('stats');
@@ -903,6 +945,178 @@ soundInput.addEventListener('change', () => {
 });
 
 /* ------------------------------------------------------------------ */
+/* Pro guide: the key presses that solve the cube, in order            */
+/* ------------------------------------------------------------------ */
+// The game knows every move since the cube was last solved (`trail`), so the way back is
+// that list reversed and inverted. Whole-cube rotations are folded away (the cube counts as
+// solved in any orientation) and neighbouring turns are merged or cancelled, so a fresh
+// scramble always comes back as at most the scramble's own length of face turns.
+const AXIS_ORDER = ['x', 'y', 'z'];
+const quarterTurns = (angle) => ((Math.round(angle / (Math.PI / 2)) % 4) + 4) % 4;
+const ROT_STEP = {
+  x: [1, 0, 0, 0, 0, -1, 0, 1, 0],
+  y: [0, 0, 1, 0, 1, 0, -1, 0, 0],
+  z: [0, -1, 0, 1, 0, 0, 0, 0, 1],
+};
+function mat3Mul(a, b) {
+  const r = new Array(9);
+  for (let i = 0; i < 3; i++) {
+    for (let j = 0; j < 3; j++) r[i * 3 + j] = a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j];
+  }
+  return r;
+}
+
+// Add a single-layer turn, merging it with a turn of the same layer it commutes back to.
+function pushTurn(list, t) {
+  for (let i = list.length - 1; i >= 0 && list[i].axis === t.axis; i--) {
+    if (list[i].layer !== t.layer) continue;
+    const q = (list[i].q + t.q) % 4;
+    if (q) list[i] = { ...t, q };
+    else list.splice(i, 1);
+    return;
+  }
+  list.push(t);
+}
+
+function turnToMove({ axis, layer, q }) {
+  const base = LAYER_NAMES[axis][layer];
+  if (q === 2) return parseMove(base + '2');
+  return parseMove(base + ((q === 1 ? 1 : -1) === BASE[base][2] ? '' : "'"));
+}
+
+function guideSolution() {
+  // D is a whole-cube rotation that still has to happen after everything emitted so far.
+  let D = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  const turns = [];
+  const emit = (ai, layer, q) => {
+    // "rotate by D, then turn" equals "turn the layer D⁻¹ points at, then rotate by D"
+    const row = D.slice(ai * 3, ai * 3 + 3);
+    const b = row.findIndex((v) => v !== 0);
+    const s = row[b];
+    pushTurn(turns, { axis: AXIS_ORDER[b], layer: layer * s, q: s > 0 ? q : (4 - q) % 4 });
+  };
+  for (let i = trail.length - 1; i >= 0; i--) {
+    const mv = trail[i];
+    const q = quarterTurns(-mv.angle);
+    if (!q) continue;
+    const ai = AXIS_ORDER.indexOf(mv.axis);
+    if (mv.layers.includes(0)) {
+      // A middle-layer turn is a whole-cube rotation plus the untouched outer layers turned back.
+      for (const l of [-1, 1]) if (!mv.layers.includes(l)) emit(ai, l, (4 - q) % 4);
+      let r = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+      for (let k = 0; k < q; k++) r = mat3Mul(ROT_STEP[mv.axis], r);
+      D = mat3Mul(r, D);
+    } else {
+      for (const l of mv.layers) emit(ai, l, q);
+    }
+  }
+  return turns.map(turnToMove);
+}
+
+const SPEED_KEY_FOR = {};
+for (const [code, mv] of Object.entries(SPEED_KEYS)) if (!(mv in SPEED_KEY_FOR)) SPEED_KEY_FOR[mv] = code;
+const LEFT_HAND = new Set(['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyT', 'KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB']);
+const handOf = (code) => (LEFT_HAND.has(code) ? 'L' : 'R');
+
+// The key presses for one move. A double turn is the same key twice; when both directions
+// work, pick the hand that did not press the previous key, so the hands keep alternating.
+function pressesFor(mv, prevHand) {
+  const base = mv.name[0];
+  const double = mv.name.endsWith('2');
+  if (settings.layout !== 'speed') {
+    const label = (mv.name.endsWith("'") ? '⇧' : '') + base;
+    return double ? [label, label] : [label];
+  }
+  let code = SPEED_KEY_FOR[double ? base : mv.name];
+  if (double) {
+    const alt = SPEED_KEY_FOR[base + "'"];
+    if (handOf(code) === prevHand && handOf(alt) !== prevHand) code = alt;
+  }
+  return double ? [code, code] : [code];
+}
+
+let guideWasOn = null;
+
+// How many caps fit across the screen (the next cap is wider, and "+N" needs room).
+function guideVisibleCount() {
+  const mobile = mobileMQ.matches;
+  const pitch = mobile ? 41 : 48;
+  const nextWidth = mobile ? 53 : 64;
+  const avail = Math.min(780, window.innerWidth * 0.94) - 44;
+  return Math.max(4, Math.min(14, 1 + Math.floor((avail - nextWidth) / pitch)));
+}
+
+function renderGuide() {
+  const on = settings.guide;
+  if (on !== guideWasOn) {
+    guideWasOn = on;
+    document.body.classList.toggle('guide-on', on);
+    $('btnGuide').classList.toggle('on', on);
+    $('btnGuide').setAttribute('aria-pressed', String(on));
+    $('guide').hidden = !on;
+    resize();
+  }
+  if (!on) {
+    guideMoves = [];
+    return;
+  }
+  guideMoves = guideSolution();
+  const tape = $('guideTape');
+  if (!guideMoves.length) {
+    $('guideInfo').textContent = '';
+    tape.innerHTML = `<span class="guide-empty">${isTouch ? 'Tap <b>Scramble</b>' : 'Press <kbd>Space</kbd>'} to scramble, then follow the ${isTouch ? 'moves' : 'keys'}.</span>`;
+    return;
+  }
+  if (state !== 'free') guideSeen = true;
+  const items = [];
+  let prevHand = null;
+  for (const mv of guideMoves) {
+    const cls = moveClass(mv.name);
+    if (isTouch) {
+      items.push({ main: mv.name, sub: '', cls });
+      continue;
+    }
+    pressesFor(mv, prevHand).forEach((k, i) => {
+      const speed = settings.layout === 'speed';
+      items.push({ main: speed ? keyLabel(k) : k, sub: i === 0 ? mv.name : '', cls, cont: i > 0 });
+      if (speed) prevHand = handOf(k);
+    });
+  }
+  $('guideInfo').textContent = isTouch ? `${guideMoves.length} moves left` : `${guideMoves.length} moves · ${items.length} keys left`;
+  const visible = guideVisibleCount();
+  tape.innerHTML =
+    items
+      .slice(0, visible)
+      .map((it, i) => {
+        const cls = `cap ${it.cls}${it.cont ? ' cont' : ''}`;
+        const body = `<b>${it.main}</b><small>${it.sub || '&nbsp;'}</small>`;
+        return i === 0
+          ? `<button type="button" class="${cls} next" tabindex="-1" title="Next: ${guideMoves[0].name}">${body}</button>`
+          : `<span class="${cls}">${body}</span>`;
+      })
+      .join('') + (items.length > visible ? `<span class="more">+${items.length - visible}</span>` : '');
+}
+window.addEventListener('resize', () => settings.guide && renderGuide());
+
+// A turn that is not the one the guide asked for: shake the strip (the guide re-plans by itself).
+function checkGuidePress(mv) {
+  const want = guideMoves[0];
+  if (!want) return;
+  const ok = want.name === mv.name || (want.name.endsWith('2') && want.name[0] === mv.name[0]);
+  if (ok) return;
+  const box = $('guide');
+  box.classList.remove('miss');
+  void box.offsetWidth;
+  box.classList.add('miss');
+}
+
+function toggleGuide() {
+  settings.guide = !settings.guide;
+  saveSettings();
+  refreshUI();
+}
+
+/* ------------------------------------------------------------------ */
 /* Main loop                                                           */
 /* ------------------------------------------------------------------ */
 let lastFrame = performance.now();
@@ -940,6 +1154,9 @@ window.cuberush = {
   },
   get moves() {
     return moveCount;
+  },
+  get solution() {
+    return guideSolution().map((m) => m.name).join(' ');
   },
 };
 

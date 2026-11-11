@@ -277,6 +277,103 @@ button { font: inherit; color: inherit; }
 .btn.primary:hover { background: #48d67d; }
 .btn.primary kbd { color: var(--accent-ink); border-color: rgba(6, 43, 20, 0.35); background: rgba(255, 255, 255, 0.28); }
 
+.btn.guide-btn.on {
+  border-color: var(--accent);
+  color: #7ee2a4;
+  box-shadow: 0 0 0 3px rgba(53, 196, 106, 0.18);
+}
+
+/* ---------- Pro guide key strip ---------- */
+.guide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  max-width: min(780px, 94vw);
+}
+.guide[hidden] { display: none; }
+body.guide-on .movelog { display: none; }
+.guide-head { display: flex; gap: 10px; align-items: baseline; font-size: 12px; color: var(--muted); }
+.guide-title { text-transform: uppercase; letter-spacing: 1px; font-weight: 700; color: var(--accent); }
+.guide-info { font-variant-numeric: tabular-nums; }
+.guide-tape {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  justify-content: flex-start;
+  max-width: 100%;
+  min-height: 68px;
+  padding: 2px 4px;
+  overflow: hidden;
+}
+/* Centred when it fits; if it ever overflows, the next key (first child) stays visible. */
+.guide-tape > :first-child { margin-left: auto; }
+.guide-tape > :last-child { margin-right: auto; }
+.guide-empty { align-self: center; color: var(--muted); font-size: 14px; text-align: center; }
+.cap {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 50px;
+  padding: 0;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom: 3px solid rgba(255, 255, 255, 0.3);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  opacity: 0.8;
+}
+.cap b { font-size: 19px; line-height: 1; }
+.cap small { font-size: 11px; line-height: 1; color: var(--muted); }
+.cap.cont { margin-left: -3px; }
+.cap:nth-child(n + 7) { opacity: 0.6; }
+.cap:nth-child(n + 11) { opacity: 0.4; }
+.cap.f-R { border-bottom-color: #e0314f; }
+.cap.f-L { border-bottom-color: #ff6a1a; }
+.cap.f-U { border-bottom-color: #f4f4f4; }
+.cap.f-D { border-bottom-color: #ffd500; }
+.cap.f-F { border-bottom-color: #19b86d; }
+.cap.f-B { border-bottom-color: #3d86ff; }
+.cap.next {
+  width: 58px;
+  height: 66px;
+  opacity: 1;
+  cursor: pointer;
+  border-color: var(--accent);
+  background: rgba(20, 44, 30, 0.92);
+  box-shadow: 0 0 0 3px rgba(53, 196, 106, 0.22), 0 8px 26px rgba(53, 196, 106, 0.28);
+  animation: capIn 0.14s ease-out;
+}
+.cap.next b { font-size: 28px; }
+.cap.next small { font-size: 13px; color: #9fe8bb; }
+.more { align-self: center; color: var(--muted); font-size: 13px; padding-left: 4px; }
+@keyframes capIn { from { transform: translateY(5px) scale(0.92); } }
+.guide.miss .cap.next {
+  border-color: #ff5a5a;
+  box-shadow: 0 0 0 3px rgba(255, 90, 90, 0.25);
+  animation: shake 0.28s ease-in-out;
+}
+@keyframes shake {
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+.recent .tag {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  border: 1px solid rgba(53, 196, 106, 0.4);
+  border-radius: 999px;
+  padding: 0 5px;
+  margin-left: 4px;
+  vertical-align: 2px;
+}
+.badge.guide { background: rgba(53, 196, 106, 0.15); color: #7ee2a4; }
+
 /* ---------- modals ---------- */
 .backdrop {
   position: fixed;
@@ -425,4 +522,10 @@ button { font: inherit; color: inherit; }
   .movelog { font-size: 13px; }
   .btn { padding: 9px 13px; font-size: 13px; }
   .big-time { font-size: 54px; }
+  .guide-tape { gap: 5px; min-height: 58px; }
+  .cap { width: 36px; height: 44px; }
+  .cap b { font-size: 16px; }
+  .cap.next { width: 48px; height: 56px; }
+  .cap.next b { font-size: 22px; }
+  body.guide-on .scramble { display: none; }
 }

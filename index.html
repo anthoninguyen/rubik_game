@@ -79,10 +79,15 @@
   </div>
 
   <footer class="bottombar">
+    <div id="guide" class="guide" hidden>
+      <div class="guide-head"><span class="guide-title">Pro guide</span><span id="guideInfo" class="guide-info"></span></div>
+      <div id="guideTape" class="guide-tape" aria-live="polite"></div>
+    </div>
     <div id="moveLog" class="movelog"></div>
     <div id="scramble" class="panel scramble"></div>
     <div class="controls">
       <button class="btn primary" id="btnScramble" type="button">Scramble <kbd>Space</kbd></button>
+      <button class="btn guide-btn" id="btnGuide" type="button" aria-pressed="false">Pro guide <kbd>Tab</kbd></button>
       <button class="btn" id="btnUndo" type="button">Undo <kbd>⌫</kbd></button>
       <button class="btn" id="btnReset" type="button">Reset <kbd>Esc</kbd></button>
     </div>
@@ -96,6 +101,7 @@
       <ul class="howto">
         <li><b>Mouse / touch:</b> drag a sticker to turn its layer. Drag empty space to turn the whole cube.</li>
         <li><b>Keyboard:</b> two-handed speedcuber keys (<kbd>I</kbd> <kbd>K</kbd> <kbd>J</kbd> <kbd>F</kbd> …) for very fast solving. <button class="link-btn inline" type="button" data-open="keys">See the key map</button></li>
+        <li><b>Pro guide:</b> press <kbd>Tab</kbd> (or the <b>Pro guide</b> button) and the game shows which keys to press, in order, to solve the cube in a few seconds.</li>
         <li><b>Timer:</b> starts on your first turn and stops the moment the cube is solved.</li>
       </ul>
       <div class="modal-actions">
